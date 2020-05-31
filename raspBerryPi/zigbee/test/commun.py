@@ -46,7 +46,7 @@ def cmdx(serial, command, timeout=2):
     retry = 3
     ind = 0
     # if time out and can't receive data, the retry
-    while ind < 3:
+    while ind < retry:
         ind += 1
         serial.write(command)
         n = 0
