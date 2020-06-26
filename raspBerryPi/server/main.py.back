@@ -1,0 +1,55 @@
+from fastapi import FastAPI
+import time
+from lib.asyser import asyser
+
+''' http operations
+post get put delete options head patch trace
+
+post: to create data
+get: to read data
+put: to update data
+delete: to delete data
+'''
+
+# create a fastapi instance
+app = FastAPI()
+
+asyser = asyser()
+
+asyser.watch_serial()
+
+
+def callback(func, idx):
+    global asyser
+    wait_idx = 0
+    data = ''
+    while True:
+        if wait_idx >= 2000:
+            break
+        asyser.lock_flag.acquire()
+        if asyser.flag_dict[idx][0] == 'T':
+            asyser.flag_dict[idx][0] == 'F'
+            data = asyser.flag_dict[idx][1]
+            asyser.lock_flag.release()
+            func(data)
+            break
+        else:
+            asyser.lock_flag.release()
+        time.sleep(0.001)
+        wait_idx += 1
+
+
+@app.get("/a")
+def handleLight():
+    '''
+    '''
+    print('in /a')
+    idx = asyser.cmd_idx
+    asyser.send_serial("abc", idx)
+    result = ''
+
+    def handle(data):
+        print('in a')
+        result = {"message": "Yes!"}
+    callback(handle, idx)
+    return result

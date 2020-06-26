@@ -1,0 +1,33 @@
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [4308] using statreload
+INFO:     Started server process [4310]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+in /c
+48
+s
+INFO:     192.168.199.244:59932 - "GET /c HTTP/1.1" 200 OK
+in /c
+48
+s
+INFO:     192.168.199.244:59932 - "GET /c HTTP/1.1" 200 OK
+in /a
+48
+in /c
+48
+s
+INFO:     192.168.199.244:59934 - "GET /a HTTP/1.1" 200 OK
+s
+INFO:     192.168.199.244:59936 - "GET /c HTTP/1.1" 200 OK
+in /c
+48
+s
+INFO:     192.168.199.244:59936 - "GET /c HTTP/1.1" 200 OK
+in /a
+48
+in /c
+48
+s
+INFO:     192.168.199.244:59994 - "GET /a HTTP/1.1" 200 OK
+s
+INFO:     192.168.199.244:59996 - "GET /c HTTP/1.1" 200 OK
