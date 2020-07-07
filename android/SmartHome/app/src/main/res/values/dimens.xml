@@ -1,0 +1,5 @@
+<resources>
+    <dimen name="fab_margin">16dp</dimen>
+    <dimen name="item_height">10dp</dimen>
+    <dimen name="switch_width">50dp</dimen>
+</resources>

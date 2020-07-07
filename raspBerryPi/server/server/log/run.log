@@ -1,0 +1,52 @@
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [15386] using statreload
+INFO:     Started server process [15388]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+in watch
+init main
+receive data:b0a|
+['b0a']
+INFO:     192.168.199.191:44331 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b1T|
+['b1T']
+INFO:     192.168.199.191:38194 - "GET /light/control/b/on HTTP/1.1" 200 OK
+receive data:b2a|
+['b2a']
+INFO:     192.168.199.191:37854 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b3T|
+['b3T']
+INFO:     192.168.199.191:37393 - "GET /light/control/b/off HTTP/1.1" 200 OK
+receive data:b4T|
+['b4T']
+INFO:     192.168.199.191:53036 - "GET /light/control/b/on HTTP/1.1" 200 OK
+receive data:b5a|
+['b5a']
+INFO:     192.168.199.191:47824 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b6T|
+['b6T']
+INFO:     192.168.199.191:54474 - "GET /light/control/b/on HTTP/1.1" 200 OK
+receive data:b7a|
+['b7a']
+INFO:     192.168.199.191:38962 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b8a|
+['b8a']
+INFO:     192.168.199.191:37275 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b9a|
+['b9a']
+INFO:     192.168.199.191:49604 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b:b|
+['b:b']
+INFO:     192.168.199.191:58749 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b;b|
+['b;b']
+INFO:     192.168.199.191:51818 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b<b|
+['b<b']
+INFO:     192.168.199.191:46775 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b=b|
+['b=b']
+INFO:     192.168.199.191:46078 - "GET /light/status/b HTTP/1.1" 200 OK
+receive data:b>b|
+['b>b']
+INFO:     192.168.199.191:42952 - "GET /light/status/b HTTP/1.1" 200 OK
