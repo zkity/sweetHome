@@ -1,32 +1,22 @@
-# sweetHome
-从零开始打造智能家居的尝试，使用ZigBee网络协议，总控采用RaspBerry Pi，智能终端的控制采用STM32 F系列，交互软件为Android
+# SweetHome
+从零开始打造智能家居系统的尝试，主要的实现有
 
-Version: 0.0
+- 可以扫码添加设备并控制设备的Android App
+- 可以控制亮灭的灯，并可以设置在Android App连接到指定Wifi后自动亮起
+- 可以控制开关的窗帘，机械结构部分自己设计并3D打印出来
+- 树莓派主控，实现Http请求接口和ZigBee模块的通信以及这2种协议的桥接
 
-## 硬件选型
+## 效果演示
 
-### ZigBee
-该版本采用基于CC2530实现的ZigBee串口透传模块
+[视频已上传到B站](https://www.bilibili.com/video/BV19t4y197Cs)
 
-### RaspBerry Pi
-采用RaspBerry Pi4,RaspBain系统，采用这个配置是为了部署机器学习
+### 硬件及功能
 
-### STM32
-采用STM32F1和F4的最小系统板，HAL方式开发
+#### 主控
+使用RaspBerry Pi4运行Fast API后台，处理Android App发出的Http请求，并将请求转换为对应的指令通过ZigBee模块发送到家居终端，同时使用多线程监听接收家居终端发送回来的ZigBee回令，通过指令顺序标识
 
-## 功能实现
+#### 家居终端
+使用STM32F103C8T6最小系统板，搭配ZigBee串口透传模块，结合多种传感器和电机实现相应功能，开发方式为HAL
 
-### 灯
-实现用户回家，手机连上家里WiFi则自动打开进门灯
-
-实现App控制开关灯
-
-### 窗帘
-实现根据光线状况自动开关窗帘
-
-实现App控制开光窗帘
-
-### 空气加湿器
-实现根据家里状况自动开关
-
-实现App控制开关
+#### ZigBee
+使用的ZigBee模块是基于CC2530的串口透传模块，使用ZigBee而非WiFi是由于WiFi不完全适用于大规模的智能家居场景中
