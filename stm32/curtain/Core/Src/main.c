@@ -23,7 +23,8 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "stdio.h"
+#include "math.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +42,11 @@
 #define UART_ZB_BUF_SIZE 10
 // 用于串口输出到Log的数组大小
 #define UART_LOG_BUF_SIZE 128
+
+// ZigBee 发送数据长度
+#define ZB_SEND_DATA_LEN 8
+// ZigBee 接收数据长度
+#define ZB_RECEIVE_DATA_LEN 5
 
 // 串口输出到ZigBee，DMA方式
 #define sendToZBByDMA(...) HAL_UART_Transmit_DMA(&huart1,\
@@ -70,8 +76,29 @@ TIM_HandleTypeDef htim1;
 
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart1_tx;
+DMA_HandleTypeDef hdma_usart3_rx;
+DMA_HandleTypeDef hdma_usart3_tx;
 
 /* USER CODE BEGIN PV */
+
+// 设备地址
+const char DEVICE_ADDRESS = 'd';
+// 设备类型
+const char DEVICE_TYPE = 'c';
+// 配对码
+const char DEVICE_PAIR = 'o';
+
+const uint8_t FULL_CIRCLE = 52;
+
+// 上次执行的命令代码
+char cmd_idx = 0;
+
+// 指示窗帘的状态
+char status = 'a';
+
+char sce[3] = {'b'};
 
 // 用于输出指定数量的pwm波
 uint32_t pwm_counter = 0;
@@ -80,8 +107,15 @@ uint32_t pwm_counter_idx = 0;
 // 用于指示步进电机工作状态
 uint8_t motor_on = 0;
 
+
+// ZigBee接收到数据的标志
+uint8_t is_ZB_rec = 0;
+// ZigBee接收数据缓存
+uint8_t ZB_rec_buf[ZB_RECEIVE_DATA_LEN];
+
 // 用于串口输出到ZigBee的数组的大小
 char uart_ZB_buf[UART_ZB_BUF_SIZE];
+char zb_send[UART_ZB_BUF_SIZE];
 
 // 用于串口输出到Log的数组
 char uart_log_buf[UART_LOG_BUF_SIZE];
@@ -91,11 +125,14 @@ char uart_log_buf[UART_LOG_BUF_SIZE];
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_DMA_Init(void);
 static void MX_TIM1_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
-void stepper_motor_contoler(uint8_t enable, uint8_t direction, uint16_t distance, uint8_t frequence);
+uint8_t stepper_motor_contoler(uint8_t enable, uint8_t direction, uint16_t distance, uint8_t frequence);
+void copyMat(uint8_t *a, uint8_t *b, uint8_t len);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -106,10 +143,15 @@ void stepper_motor_contoler(uint8_t enable, uint8_t direction, uint16_t distance
  *
  * @Param: enable: 电机是否允许空转，取0时不允许，取1时允许
  * @Param: direction: 取0时正转，取1时反转
- * @Param: distance: 电机总共转的圈数
- * @Param: frequence: 电机转动频率，可取1-100，为了准确最好取可以被100整除的数字
+ * @Param: distance: 电机总共转的半圈数
+ * @Param: frequence: 电机转动频率，可取1-100，为了准确最好取可以被100整除的数字, 1代表半圈
+ *
+ * @Return: 0-没走， 1-开始走
  */
-void stepper_motor_contoler(uint8_t enable, uint8_t direction, uint16_t distance, uint8_t frequence){
+uint8_t stepper_motor_contoler(uint8_t enable, uint8_t direction, uint16_t distance, uint8_t frequence){
+	if(distance == 0){
+		return 0;
+	}
 	motor_on = 1;
 	pwm_counter_idx = 0;
 	// 控制点击是否允许空转
@@ -125,14 +167,16 @@ void stepper_motor_contoler(uint8_t enable, uint8_t direction, uint16_t distance
 		HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 	}
 	uint8_t reg_freq = 0;
-	reg_freq = 100 / frequence;
+	// reg_freq = 100 / frequecne;
+	reg_freq = 200 / frequence;
 	// 控制步进电机的转速
 	TIM1->ARR = reg_freq-1;
 	TIM1->CCR2 = (uint8_t)(reg_freq * 0.5);
 
 	// 由上述可知，计时器的频率为 80K/reg_freq，则步进电机共走的圈数为T*frequence，同时n = T * f = T * 80K / ( 100 / frequence)
 	// 控制电机走的圈数
-	pwm_counter = distance * 800;
+	pwm_counter = distance * 200;
+	// pwm_counter = distance * 800;
 
 	// 开启时钟中断
 	if(HAL_OK != HAL_TIM_Base_Start_IT(&htim1))
@@ -142,6 +186,14 @@ void stepper_motor_contoler(uint8_t enable, uint8_t direction, uint16_t distance
 	if(HAL_OK != HAL_TIM_PWM_Start(&htim1, TIM_CHANNEL_2))
 		Error_Handler();
 
+	return 1;
+}
+
+// 复制数组
+void copyMat(uint8_t *a, uint8_t *b, uint8_t len){
+	for(int i = 0; i< len; i++){
+		b[i] = a[i];
+	}
 }
 
 /* USER CODE END 0 */
@@ -175,26 +227,138 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM1_Init();
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
+  // 串口1使用DMA方式循环接收数据
+  HAL_UART_Receive_DMA(&huart1,\
+		  	  	  	   ZB_rec_buf,\
+  					   ZB_RECEIVE_DATA_LEN);
 
+  sendToLogByDMA("init curtain\n");
+  HAL_Delay(50);
+  sendToLogByDMA("%c\n", DEVICE_ADDRESS);
   /* USER CODE END 2 */
  
  
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint8_t zb_cache[ZB_RECEIVE_DATA_LEN] = {0};
   while (1)
   {
-	  stepper_motor_contoler(1, 0, 5, 2);
-	  HAL_Delay(5000);
-	  stepper_motor_contoler(1, 1, 5, 2);
-	  HAL_Delay(5000);
-	  stepper_motor_contoler(1, 1, 3, 1);
-	  HAL_Delay(5000);
+	  // ZigBee接收到指令
+	  if(is_ZB_rec == 1){
+		  // sendToLogByDMA("zb get data! %c, %c, %c, %c, %c\n", ZB_rec_buf[0], ZB_rec_buf[1], ZB_rec_buf[2], ZB_rec_buf[3], ZB_rec_buf[4]);
+		  // HAL_Delay(50);
+		  // 将指令复制到cache
+	  	  copyMat(ZB_rec_buf, zb_cache, ZB_RECEIVE_DATA_LEN);
+	  	  is_ZB_rec = 0;
+	  	  // 若已近处理则抛弃
+	  	  if(zb_cache[1] == cmd_idx){
+	  		  continue;
+	  	  }else{
+	  		  cmd_idx = zb_cache[1];
+			  // sendToLogByDMA("zb get data!\n");
+			  // HAL_Delay(50);
+	  		  // 处理指令，配对
+	  		  if(zb_cache[2] == 'a'){
+	  			  if((DEVICE_PAIR == zb_cache[3]) && (DEVICE_TYPE == zb_cache[4])){
+	  				  zb_send[2] = 'T';
+	  			  }else{
+	  				  zb_send[2] = 'F';
+	  			  }
+	  			  zb_send[0] = DEVICE_ADDRESS;
+	  			  zb_send[1] = cmd_idx;
+	  			  zb_send[3] = '|';
+				  sendToLogByDMA("zb send data!\n");
+				  HAL_Delay(50);
+	  			  sendToZBByDMA(zb_send);
+	  		  // 处理指令，控制窗帘的状态
+	  		  }else if(zb_cache[2] == 'o'){
+	  			  uint8_t circle = 0;
+	  			  uint8_t dir = 0;
+	  			  // 全部打开
+	  			  if(zb_cache[3] == 'a'){
+	  				  dir = 0;
+	  				  if(status == 'a'){
+	  					  circle = 0;
+	  				  }else if(status == 'c'){
+	  					  circle = FULL_CIRCLE/2;
+	  				  }else if(status == 'e'){
+	  					  circle = FULL_CIRCLE;
+	  				  }
+	  				  status = 'a';
+	  			  // 打开一半
+	  			  }else if(zb_cache[3] == 'c'){
+	  				  if(status == 'a'){
+	  					  circle = FULL_CIRCLE/2;
+	  					  dir = 1;
+	  				  }else if(status == 'c'){
+	  					  circle = 0;
+	  					  dir = 0;
+	  				  }else if(status == 'e'){
+	  					  circle = FULL_CIRCLE/2;
+	  					  dir = 0;
+	  				  }
+	  				  status = 'c';
+	  			  // 全部关闭
+	  			  }else if(zb_cache[3] == 'e'){
+	  				  dir = 1;
+	  				  if(status == 'a'){
+	  					  circle = FULL_CIRCLE;
+	  				  }else if(status == 'c'){
+	  					  circle = FULL_CIRCLE/2;
+	  				  }else if(status == 'e'){
+	  					  circle = 0;
+	  				  }
+	  				  status = 'e';
+	  			  }
+	  			  stepper_motor_contoler(1, dir, circle, 1);
+	  			  zb_send[0] = DEVICE_ADDRESS;
+	  			  zb_send[1] = cmd_idx;
+	  			  zb_send[2] = 'T';
+	  			  zb_send[3] = '|';
+	  			  sendToZBByDMA(zb_send);
+	  			  HAL_Delay(100);
+	  			  // sendToLogByDMA("montor go %d, %d, %s\n", dir, circle, zb_send);
+	  		  // 处理指令，返回窗帘的状态
+	  		  }else if(zb_cache[2] == 'p'){
+	  			  zb_send[0] = DEVICE_ADDRESS;
+	  			  zb_send[1] = cmd_idx;
+	  			  zb_send[2] = status;
+	  			  zb_send[3] = '|';
+	  			  sendToZBByDMA(zb_send);
+	  		  // 处理指令，控制窗帘的场景
+	  		  }else if(zb_cache[2] == 'q'){
+	  			  if((zb_cache[3] == 'z') && (zb_cache[4] == 'c')){
+		  			  zb_send[0] = DEVICE_ADDRESS;
+		  			  zb_send[1] = cmd_idx;
+		  			  zb_send[2] = sce[0];
+		  			  zb_send[3] = sce[1];
+		  			  zb_send[4] = sce[2];
+		  			  zb_send[5] = '|';
+		  			  sendToZBByDMA(zb_send);
+	  			  }else{
+	  				  if(zb_cache[3] == 'a'){
+	  					  sce[0] = zb_cache[4];
+	  				  }else if(zb_cache[3] == 'b'){
+	  					  sce[1] = zb_cache[4];
+	  				  }else if(zb_cache[3] == 'c'){
+	  					  sce[2] = zb_cache[4];
+	  				  }
+		  			  zb_send[0] = DEVICE_ADDRESS;
+		  			  zb_send[1] = cmd_idx;
+		  			  zb_send[2] = 'T';
+		  			  zb_send[3] = '|';
+		  			  sendToZBByDMA(zb_send);
+	  			  }
+	  		  }
+	  	  }
+	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -380,6 +544,31 @@ static void MX_USART3_UART_Init(void)
 
 }
 
+/** 
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void) 
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel2_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel2_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel2_IRQn);
+  /* DMA1_Channel3_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel3_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel3_IRQn);
+  /* DMA1_Channel4_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel4_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel4_IRQn);
+  /* DMA1_Channel5_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel5_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel5_IRQn);
+
+}
+
 /**
   * @brief GPIO Initialization Function
   * @param None
@@ -397,12 +586,22 @@ static void MX_GPIO_Init(void)
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOA, GPIO_PIN_3|GPIO_PIN_4, GPIO_PIN_RESET);
 
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3|GPIO_PIN_4, GPIO_PIN_SET);
+
   /*Configure GPIO pins : PA3 PA4 */
   GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PB3 PB4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_3|GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 }
 
@@ -424,6 +623,17 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 				if(HAL_OK != HAL_TIM_Base_Stop_IT(&htim1))
 					Error_Handler();
 			}
+		}
+	}
+}
+
+// 串口1收到数据的回调函数
+void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
+	if (huart->Instance == USART1){
+		// 若接收方为自己则接收
+
+		if(ZB_rec_buf[0] == DEVICE_ADDRESS){
+			is_ZB_rec = 1;
 		}
 	}
 }

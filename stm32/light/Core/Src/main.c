@@ -122,14 +122,17 @@ DMA_HandleTypeDef hdma_usart3_tx;
 const char DEVICE_ADDRESS = 'b';
 // 设备类型
 const char DEVICE_TYPE = 'b';
+// 配对码
+const char DEVICE_PAIR = 'n';
 
 // 上次执行的命令代码
 char cmd_idx = 0;
 
-// 声控模式标志
-uint8_t is_voice_light_light = 0;
-// 进门开灯模式标志
-uint8_t is_door_light = 0;
+// 场景模式开关
+// 1. 进门灯 2. 声控灯 3. 人体感应灯 4. 离家 5. 定时 6. 自动
+char state[6] = {'b'};
+uint16_t voice_light_count = 0;
+uint8_t voice_light_on = 0;
 
 // ZigBee接收到数据的标志
 uint8_t is_ZB_rec = 0;
@@ -137,6 +140,7 @@ uint8_t is_ZB_rec = 0;
 uint8_t ZB_rec_buf[ZB_RECEIVE_DATA_LEN];
 // 用于串口输出到ZigBee的数组的大小
 char uart_ZB_buf[UART_ZB_BUF_SIZE];
+char zb_send[UART_ZB_BUF_SIZE];
 
 // 用于串口输出到Log的数组
 char uart_log_buf[UART_LOG_BUF_SIZE];
@@ -197,6 +201,13 @@ void setLevLED(uint8_t lev){
 	TIM3->CCR2 = r;
 	TIM3->CCR3 = g;
 	TIM3->CCR4 = b;
+}
+
+// 复制数组
+void copyMat(uint8_t *a, uint8_t *b, uint8_t len){
+	for(int i = 0; i< len; i++){
+		b[i] = a[i];
+	}
 }
 
 
@@ -272,34 +283,115 @@ int main(void)
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+  uint8_t zb_cache[ZB_RECEIVE_DATA_LEN] = {0};
   while (1)
   {
 	  // ZigBee接收到指令
 	  if(is_ZB_rec == 1){
-		  // TODO: 将指令复制到cache
-
+		  // 将指令复制到cache
+		  copyMat(ZB_rec_buf, zb_cache, ZB_RECEIVE_DATA_LEN);
 		  is_ZB_rec = 0;
-		  // TODO: 解析指令
-		  if(ZB_rec_buf[4] == 'a'){
-			  HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_13);
-		  }else if(ZB_rec_buf[4] == 'b'){
-			  setLevLED(0);
-		  }else if(ZB_rec_buf[4] == 'c'){
-			  setLevLED(1);
-		  }else if(ZB_rec_buf[4] == 'd'){
-			  setLevLED(2);
+		  // 若已近处理则抛弃
+		  if(zb_cache[1] == cmd_idx){
+			  continue;
+		  }else{
+			  cmd_idx = zb_cache[1];
+			  // 处理指令，配对
+			  if(zb_cache[2] == 'a'){
+				  if((DEVICE_PAIR == zb_cache[3]) && (DEVICE_TYPE == zb_cache[4])){
+					  zb_send[2] = 'T';
+				  }else{
+					  zb_send[2] = 'F';
+				  }
+				  zb_send[0] = DEVICE_ADDRESS;
+				  zb_send[1] = cmd_idx;
+				  zb_send[3] = '|';
+				  sendToZBByDMA(zb_send);
+			  // 处理指令，控制灯的状态
+			  }else if(zb_cache[2] == 'b'){
+				  if(zb_cache[3] == 'a'){
+					  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+					  zb_send[2] = 'T';
+				  }else{
+					  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
+					  zb_send[2] = 'T';
+				  }
+				  zb_send[0] = DEVICE_ADDRESS;
+				  zb_send[1] = cmd_idx;
+				  zb_send[3] = '|';
+				  sendToZBByDMA(zb_send);
+			  // 处理指令，获取灯的状态
+			  }else if(zb_cache[2] == 'c'){
+				  GPIO_PinState lightState = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_13);
+				  if(lightState == GPIO_PIN_SET){
+					  zb_send[2] = 'a';
+				  }else{
+					  zb_send[2] = 'b';
+				  }
+				  zb_send[0] = DEVICE_ADDRESS;
+				  zb_send[1] = cmd_idx;
+				  zb_send[3] = '|';
+				  sendToZBByDMA(zb_send);
+			  // 处理指令，调整指示灯状态
+			  }else if(zb_cache[2] == 'd'){
+				  if(zb_cache[3] == 'a'){
+					  setLevLED(0);
+				  }else if(zb_cache[3] == 'b'){
+					  setLevLED(1);
+				  }else if(zb_cache[3] == 'c'){
+					  setLevLED(2);
+				  }else{
+					  setLevLED(0);
+				  }
+				  zb_send[0] = DEVICE_ADDRESS;
+				  zb_send[1] = cmd_idx;
+				  zb_send[2] = 'T';
+				  zb_send[3] = '|';
+				  sendToZBByDMA(zb_send);
+			  // 处理指令，调整应用场景
+			  }else if(zb_cache[2] == 'e'){
+				  if((zb_cache[4] == 'c') && (zb_cache[3] == 'z')){
+					  zb_send[0] = DEVICE_ADDRESS;
+					  zb_send[1] = cmd_idx;
+					  zb_send[2] = state[0];
+					  zb_send[3] = state[1];
+					  zb_send[4] = state[2];
+					  zb_send[5] = state[3];
+					  zb_send[6] = state[4];
+					  zb_send[7] = state[5];
+					  zb_send[8] = '|';
+					  sendToZBByDMA(zb_send);
+				  }else{
+					  if(zb_cache[3] == 'a'){
+						  state[0] = zb_cache[4];
+					  }else if(zb_cache[3] == 'b'){
+						  state[1] = zb_cache[4];
+					  }else if(zb_cache[3] == 'c'){
+						  state[2] = zb_cache[4];
+					  }else if(zb_cache[3] == 'd'){
+						  state[3] = zb_cache[4];
+					  }else if(zb_cache[3] == 'e'){
+						  state[4] = zb_cache[4];
+					  }else if(zb_cache[3] == 'f'){
+						  state[5] = zb_cache[4];
+					  }
+					  zb_send[0] = DEVICE_ADDRESS;
+					  zb_send[1] = cmd_idx;
+					  zb_send[2] = 'T';
+					  zb_send[3] = '|';
+					  sendToZBByDMA(zb_send);
+				  }
+			  }
 		  }
-		  // TODO: 处理指令
 		  sendToLogByDMA("zb get data! %c, %c, %c, %c, %c\n", ZB_rec_buf[0], ZB_rec_buf[1], ZB_rec_buf[2], ZB_rec_buf[3], ZB_rec_buf[4]);
-
 	  }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
 
 	//sendToLogByDMA("v1: %d, v2: %d, v3: %d; v: %d, l: %d\n", voice_t[0], voice_t[1], voice_t[2], voice_current, light_current);
-	sendToZBByDMA("abcde");
-	HAL_Delay(3000);
+	// sendToZBByDMA("abcde");
+	// HAL_Delay(3000);
   }
   /* USER CODE END 3 */
 }
@@ -651,6 +743,22 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim){
 	  //开启ADC
 	  if(HAL_OK != HAL_ADC_Start_DMA(&hadc1, adc_buf, 2))
 		  Error_Handler();
+
+	  // 声光控实现
+	  if(state[2] == 'a'){
+		  if(voice_light_on == 0){
+			  if((light_current < 20) && (voice_current > 200)){
+				  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_SET);
+				  voice_light_on = 1;
+			  }
+		  }else{
+			  voice_light_count++;
+		  }
+		  if(voice_light_count >= 200){
+			  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET);
+			  voice_light_on = 0;
+		  }
+	  }
 }
 
 // ADC转换完成后回调函数
@@ -690,12 +798,11 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef* hadc){
 
 // 串口1收到数据的回调函数
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
-	// sendToLogByDMA("usart1 got data!\n");
-	// HAL_Delay(20);
 	if (huart->Instance == USART1){
-		is_ZB_rec = 1;
-		// sendToLogByDMA("recive data: %c, %c, %c\n", ZB_rec_buf[0], ZB_rec_buf[1], ZB_rec_buf[2]);
-		sendToZBByDMA("abzjb");
+		// 若接收方为自己则接收
+		if(ZB_rec_buf[0] == DEVICE_ADDRESS){
+			is_ZB_rec = 1;
+		}
 	}
 }
 
