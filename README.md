@@ -8,7 +8,7 @@
 
 ## 效果演示
 
-[视频已上传到B站](https://www.bilibili.com/video/BV19t4y197Cs)
+[视频已上传到B站](https://www.bilibili.com/video/BV1bp4y1q7fd)
 
 ### 硬件及功能
 
